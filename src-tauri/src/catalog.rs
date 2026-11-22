@@ -2,7 +2,10 @@ use crate::github::{self, Release as GitHubRelease};
 use crate::packages::{self, Manifest, Result, MAX_PACKAGE, OFFICIAL_ID};
 use reqwest::blocking::Client;
 use serde::{Deserialize, Serialize};
-use std::{collections::HashSet, path::Path};
+use std::{
+    collections::{HashMap, HashSet},
+    path::Path,
+};
 
 const CATALOG: &str = "laspencer91/cod2x-mod-catalog";
 const PUBLIC_ASSET: &str = "mod.json";
@@ -65,9 +68,17 @@ pub fn configured_repo() -> Result<Option<&'static str>> {
     Ok(Some(repo))
 }
 
-pub fn releases() -> Result<Vec<HostedRelease>> {
+#[derive(Default, Serialize)]
+pub struct Catalog {
+    repositories: HashMap<String, String>,
+    releases: Vec<HostedRelease>,
+    shared: bool,
+    warning: Option<String>,
+}
+
+pub fn releases() -> Result<Catalog> {
     let Some(repo) = configured_repo()? else {
-        return Ok(Vec::new());
+        return Ok(Catalog::default());
     };
     let client = github::client()?;
     let catalog: Registry = github::document(
@@ -80,34 +91,29 @@ pub fn releases() -> Result<Vec<HostedRelease>> {
             if mods.len() > 50 {
                 return Err("The catalog supports up to 50 mod repositories.".into());
             }
-            let mut known = HashSet::new();
-            let mut releases = Vec::new();
-            let mut last_error = None;
-            let mut reached = false;
+            let mut result = Catalog::default();
             for source in mods {
                 if source.id == OFFICIAL_ID
                     || !packages::package_key(&source.id)
                     || !repo_slug(&source.repository)
-                    || !known.insert(source.id.clone())
+                    || result.repositories.contains_key(&source.id)
                 {
                     return Err(format!("Invalid catalog repository for {}.", source.id).into());
                 }
                 match repo_releases(&client, &source.repository, &source.id) {
                     Ok(list) => {
-                        reached = true;
-                        releases.extend(list);
+                        result.releases.extend(list);
                     }
                     Err(error) => {
-                        last_error = Some(error);
+                        result.warning = Some(format!(
+                            "Couldn’t check releases for {}. {error}",
+                            source.repository
+                        ));
                     }
                 }
+                result.repositories.insert(source.id, source.repository);
             }
-            if !reached {
-                if let Some(error) = last_error {
-                    return Err(error);
-                }
-            }
-            Ok(releases)
+            Ok(result)
         }
         Registry::SharedReleases(entries) => {
             let mut known = HashSet::new();
@@ -136,7 +142,16 @@ pub fn releases() -> Result<Vec<HostedRelease>> {
                     .into());
                 }
             }
-            Ok(entries)
+            let repositories = entries
+                .iter()
+                .map(|entry| (entry.manifest.id.clone(), repo.to_owned()))
+                .collect();
+            Ok(Catalog {
+                repositories,
+                shared: true,
+                releases: entries,
+                warning: None,
+            })
         }
     }
 }
@@ -156,7 +171,7 @@ fn repo_releases(client: &Client, slug: &str, id: &str) -> Result<Vec<HostedRele
     Ok(releases)
 }
 
-pub fn published_mod(slug: &str) -> Result<Manifest> {
+pub fn published_mod(slug: &str) -> Result<Option<Manifest>> {
     if !repo_slug(slug) {
         return Err("Enter a GitHub repository as owner/repository.".into());
     }
@@ -173,14 +188,14 @@ pub fn published_mod(slug: &str) -> Result<Manifest> {
         let last = rows.len() < 30;
         for row in rows.into_iter().filter(|row| !row.draft) {
             if let Some(release) = read_release(&client, slug, None, row)? {
-                return Ok(release.manifest);
+                return Ok(Some(release.manifest));
             }
         }
         if last {
             break;
         }
     }
-    Err("This repository has no published launcher package. Use List a new mod for its first release.".into())
+    Ok(None)
 }
 
 fn read_release(
@@ -258,6 +273,7 @@ fn prepare(data: &Path, entry: &HostedRelease) -> Result<Manifest> {
 
 pub fn download(data: &Path, id: &str, version: &str) -> Result<Manifest> {
     let entry = releases()?
+        .releases
         .into_iter()
         .find(|release| release.manifest.id == id && release.manifest.version == version)
         .ok_or("This release is not in the configured mods catalog.")?;

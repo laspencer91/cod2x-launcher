@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { RecentMod, latestMod, proposedMod, rememberMod, useRecentMod } from "./RecentMod";
 import { PublishView } from "./PublishView";
 import {
-  ArrowDownToLine, ArrowRight, Box, Check, ChevronDown,
+  ArrowDownToLine, ArrowRight, Box, Check, ChevronDown, ExternalLink,
   ChevronRight, CircleAlert, CircleCheck, ClipboardCheck, Folder, FolderOpen,
   Gamepad2, Github, HardDrive, Layers3, LayoutGrid, Minus, PackagePlus,
   Play, RefreshCw, RotateCcw, ShieldCheck, Square, X,
@@ -13,7 +13,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   api, initialDashboard, native, OFFICIAL, PLAYTEST, previewRelease, STABLE,
 } from "./api";
-import type { Candidate, Dashboard, HostedRelease, Package, Release, Status } from "./api";
+import type { Candidate, Dashboard, HostedRelease, ModCatalog, Package, Release, Status } from "./api";
 
 type Page = "overview" | "official" | "mods" | "local" | "installation" | "publish";
 type Prompt = { type: "select"; candidate: Candidate } | { type: "apply"; release: Package; source: "catalog" | "local" };
@@ -94,7 +94,8 @@ export function App() {
   const [onboardingFolder, setOnboardingFolder] = useState<Candidate | null>(null);
   const [setupChoice, setSetupChoice] = useState("");
   const [releases, setReleases] = useState<Release[]>([previewRelease]);
-  const [hosted, setHosted] = useState<HostedRelease[]>([]);
+  const [catalog, setCatalog] = useState<ModCatalog>({ repositories: {}, releases: [], shared: false, warning: null });
+  const hosted = catalog.releases;
   const [catalogReady, setCatalogReady] = useState(false);
   const [catalogChecking, setCatalogChecking] = useState(false);
   const catalogRequest = useRef(0);
@@ -171,8 +172,8 @@ export function App() {
     setCatalogChecking(true);
     try {
       const items = await api.hosted();
-      if (request === catalogRequest.current) { setHosted(items); setCatalogReady(true); setCatalogError(""); }
-      return items;
+      if (request === catalogRequest.current) { setCatalog(items); setCatalogReady(!items.warning); setCatalogError(items.warning ?? ""); }
+      return items.releases;
     } catch (e) {
       if (request === catalogRequest.current) { setCatalogReady(false); setCatalogError(String(e)); }
       throw e;
@@ -569,6 +570,7 @@ export function App() {
 
   function mods() {
     const groups = new Map<string, { manifest: Package; download?: HostedRelease }[]>([[PLAYTEST, []]]);
+    for (const id of Object.keys(catalog.repositories)) groups.set(id, []);
     for (const download of hosted) {
       const id = download.manifest.id;
       const releases = groups.get(id) ?? [];
@@ -582,7 +584,7 @@ export function App() {
 
     return <>
       <PageTitle title="Other Mods" description="Choose a community mod and install a release for your game." action={<button className="button button-secondary" onClick={() => go("publish")}><PackagePlus size={16} /> Publish a mod</button>} />
-      {catalogError && <p className="catalog-error" role="status">Mods catalog unavailable. {catalogError}</p>}
+      {catalogError && <p className="catalog-error" role="status">{catalogError}</p>}
       <div className="panel mods-list" aria-label="Community mod catalog">
         <div className="mod-list-head mod-list-grid" aria-hidden="true">
           <span>Mod</span><span>Author</span><span>Version</span><span>Setup</span>
@@ -593,7 +595,9 @@ export function App() {
             const preferred = modVersions[id];
             const selected = sorted.find(({ manifest }) => manifest.version === preferred) ?? sorted[0];
             const release = selected?.manifest;
-            const name = release?.name ?? "125 Hz Playtest";
+            const repository = catalog.repositories[id];
+            const name = release?.name ?? (id === PLAYTEST ? "125 Hz Playtest" : id);
+            const releasesUrl = repository && `https://github.com/${repository}/releases${catalog.shared ? "?q=" + encodeURIComponent(id + "-v") : ""}`;
             const cached = release && cachedMods.some((item) => sameManifest(item, release));
             const current = Boolean(release && cached && installation?.packageId === id && installation.version === release.version
               && release.files.every((file) => installation.files.some((actual) => actual.path === file.path && actual.sha256 === file.sha256)));
@@ -603,7 +607,13 @@ export function App() {
                 <div className="tile-icon" aria-hidden="true"><Gamepad2 size={19} /></div>
                 <div>
                   <h2>{name}</h2>
-                  <p>{release?.description || "Claude2 client and zPAM for the 125 Hz playtest."}</p>
+                  <p>{release?.description || (id === PLAYTEST ? "Claude2 client and zPAM for the 125 Hz playtest." : repository)}</p>
+                  {releasesUrl && <a className="mod-releases-link" href={releasesUrl} target="_blank" rel="noreferrer"
+                    aria-label={name + " releases on GitHub"} onClick={event => {
+                      if (!native) return;
+                      event.preventDefault();
+                      void run("Opening mod releases", () => api.openModReleases(repository, catalog.shared ? id : ""));
+                    }}>Releases <ExternalLink size={12} aria-hidden="true" /></a>}
                   {release && <details className="mod-release-details">
                     <summary>Release details</summary>
                     <p>Requires CoD2x {release.baseVersion}{selected.download ? " \u00b7 " + (selected.download.size / 1_000_000).toFixed(1) + " MB" : ""}</p>
@@ -611,7 +621,7 @@ export function App() {
                   </details>}
                 </div>
               </div>
-              <div className="mod-author">{release?.authors.length ? release.authors.join(", ") : "Unlisted"}</div>
+              <div className="mod-author">{release?.authors.length ? release.authors.join(", ") : repository ? "—" : "Unlisted"}</div>
               <div className="mod-version">
                 {release ? <Select id={"version-" + id} label={name + " version"} value={release.version} disabled={Boolean(busy)} onChange={(version) => setModVersions((previous) => ({ ...previous, [id]: version }))}>
                   {sorted.map(({ manifest }) => <option value={manifest.version} key={manifest.version}>{manifest.version}{sorted[0]?.download && sorted[0].manifest === manifest ? " (latest)" : ""}</option>)}
@@ -702,7 +712,7 @@ export function App() {
         </nav>
         <div className="sidebar-bottom">
           <button aria-label="Installation" className={"nav-item " + (page === "installation" ? "nav-current" : "")} aria-current={page === "installation" ? "page" : undefined} onClick={() => go("installation")}><FolderOpen size={18} /><span>Installation</span></button>
-          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.2.0</span></div>
+          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.2.1</span></div>
         </div>
       </aside>
       <main className="main-view" key={page}>
@@ -710,7 +720,7 @@ export function App() {
           {page === "overview" && overview()}
           {page === "official" && official()}
           {page === "mods" && mods()}
-          {page === "publish" && <PublishView hosted={hosted} baseVersion={latest.version} baseVersions={officialVersions} onBack={() => go("mods")} />}
+          {page === "publish" && <PublishView repositories={catalog.shared ? {} : catalog.repositories} baseVersion={latest.version} baseVersions={officialVersions} onBack={() => go("mods")} />}
           {page === "local" && localBuilds()}
           {page === "installation" && installations()}
         </div>

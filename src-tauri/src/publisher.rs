@@ -262,6 +262,14 @@ pub fn github_url(
     if !catalog::repo_slug(repository) {
         return Err("Enter a public GitHub repository as owner/repository.".into());
     }
+    if kind == "releases" {
+        let mut url = reqwest::Url::parse(&format!("https://github.com/{repository}/releases"))?;
+        if packages::package_key(mod_id) {
+            url.query_pairs_mut()
+                .append_pair("q", &format!("{mod_id}-v"));
+        }
+        return Ok(url.to_string());
+    }
     let mut url = match kind {
         "release" => reqwest::Url::parse(&format!("https://github.com/{repository}/releases/new"))?,
         "listing" => {

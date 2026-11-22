@@ -5,13 +5,13 @@ Each mod uses its own public GitHub repository. Once the catalog lists it, anyon
 ## Prepare a release
 
 1. In the launcher, open **Other Mods → Publish a mod**.
-2. Choose **List a new mod** or **Publish a new version**. The publisher uses your active GitHub CLI account to show writable public repositories. **Connect GitHub** starts GitHub’s browser sign-in and downloads a verified copy of the CLI if needed. You can also choose **Use a repository link**. For a first release, enter a name, credits, and description. The launcher suggests an ID and baseline. For an update, pick a published mod to reuse its ID, credits, description, and baseline. Review the new version and add release notes. The picker finds catalog entries and repositories containing a mod descriptor among their ten most recent releases. Use a repository link to look up older publications.
+2. Select a public GitHub repository or paste its link. The picker shows repositories where your GitHub account can publish. For a first release, enter the mod name, credits, and description. When the repository already has a launcher package, the form loads its details and suggests the next version.
 3. Choose the build output folder. Select only the files you intend to ship. The scanner suggests a custom **mss32.dll** and mod **.iwd** files inside **main/**. Official archives and a recognized official DLL are excluded. Use the build output so other mods and downloaded maps are easy to avoid.
 4. **Copy publishing prompt** delegates packaging, publishing, verification, and a first catalog request to your coding agent. It works from the release details, build files, or exported package. For manual publishing, **Export release files** creates **mod.zip** and **mod.json** in a versioned output folder. The descriptor contains the package metadata, size, and SHA-256.
 5. **Open GitHub release draft** takes you to the mod repo’s Releases form. Use tag **v<version>** and attach **both** assets with their exact filenames. Publish the release through GitHub.
 6. For a new mod, click **Open listing request**. This opens the [catalog repository’s issue form](https://github.com/laspencer91/cod2x-mod-catalog/issues/new?template=publisher-request.yml). Your account is the issue author. Review and submit the request in GitHub.
 
-Existing listings pick up subsequent releases from the same repo. Keep the mod ID fixed and increment the version when any payload changes.
+After the first listing, publish subsequent releases directly on GitHub. Use the same repository and mod ID, a fresh **v<version>** tag, and matching **mod.zip** and **mod.json** assets. The launcher checks the catalog on startup and every five minutes while visible. Players choose when to install an update.
 
 ![Publishing an update from an existing mod repository](publisher.png)
 

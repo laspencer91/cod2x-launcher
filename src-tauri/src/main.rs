@@ -76,7 +76,7 @@ async fn download_release(app: AppHandle, version: String) -> Reply<packages::Ma
 }
 
 #[tauri::command]
-async fn hosted_releases() -> Reply<Vec<catalog::HostedRelease>> {
+async fn hosted_releases() -> Reply<catalog::Catalog> {
     background(catalog::releases).await
 }
 
@@ -116,7 +116,7 @@ async fn connect_publisher(app: AppHandle, progress: tauri::ipc::Channel<String>
 }
 
 #[tauri::command]
-async fn published_mod(repository: String) -> Reply<packages::Manifest> {
+async fn published_mod(repository: String) -> Reply<Option<packages::Manifest>> {
     background(move || catalog::published_mod(&repository)).await
 }
 

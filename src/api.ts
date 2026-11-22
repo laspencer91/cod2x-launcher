@@ -57,6 +57,13 @@ export interface HostedRelease {
   url: string;
 }
 
+export interface ModCatalog {
+  repositories: Record<string, string>;
+  releases: HostedRelease[];
+  shared: boolean;
+  warning: string | null;
+}
+
 export interface Dashboard {
   installation: Status | null;
   candidates: Candidate[];
@@ -121,7 +128,8 @@ export const api = {
   dashboard: () => native ? invoke<Dashboard>("dashboard") : Promise.resolve(getPreviewDashboard()),
   discover: () => native ? invoke<Candidate[]>("discover_installs") : Promise.resolve([previewCandidate]),
   releases: () => native ? invoke<Release[]>("official_releases") : Promise.resolve([previewRelease]),
-  hosted: () => native ? invoke<HostedRelease[]>("hosted_releases") : Promise.resolve([]),
+  hosted: (): Promise<ModCatalog> => native ? invoke("hosted_releases") : Promise.resolve({ repositories: {}, releases: [], shared: false, warning: null }),
+  openModReleases: (repository: string, modId: string) => invoke<void>("open_publishing_link", { kind: "releases", repository, modId, name: "", version: "" }),
   downloadMod: (id: string, version: string) => invoke<Package>("download_mod", { id, version }),
   confirm: (path: string) => native
     ? invoke<Status>("confirm_install", { path })
