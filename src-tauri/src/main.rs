@@ -1,5 +1,6 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod account;
 mod catalog;
 mod github;
 mod install;
@@ -98,6 +99,28 @@ async fn export_mod_build(app: AppHandle, draft: publisher::Draft) -> Reply<publ
 }
 
 #[tauri::command]
+fn publishing_catalog() -> Reply<Option<&'static str>> {
+    catalog::configured_repo().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+async fn publisher_account(app: AppHandle) -> Reply<Option<account::Account>> {
+    let data = data(&app)?;
+    background(move || account::account(&data)).await
+}
+
+#[tauri::command]
+async fn connect_publisher(app: AppHandle, progress: tauri::ipc::Channel<String>) -> Reply<()> {
+    let data = data(&app)?;
+    background(move || account::connect(&data, progress)).await
+}
+
+#[tauri::command]
+async fn published_mod(repository: String) -> Reply<packages::Manifest> {
+    background(move || catalog::published_mod(&repository)).await
+}
+
+#[tauri::command]
 fn open_publishing_link(
     app: AppHandle,
     kind: String,
@@ -183,6 +206,10 @@ fn main() {
             download_mod,
             scan_mod_build,
             export_mod_build,
+            publishing_catalog,
+            publisher_account,
+            connect_publisher,
+            published_mod,
             open_publishing_link,
             import_package,
             apply_package,

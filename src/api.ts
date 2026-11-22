@@ -50,6 +50,7 @@ export interface Release {
 }
 
 export interface HostedRelease {
+  publishedAt?: string | null;
   manifest: Package;
   size: number;
   sha256: string;

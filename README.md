@@ -10,11 +10,13 @@ A community Windows launcher for switching between official CoD2x and test build
 2. Open the launcher and confirm your Call of Duty 2 folder.
 3. Play an official release, browse **Other Mods**, or import a package in **Local Builds**.
 
+The Overview remembers the last mod used in each game folder. It checks for published updates and shows the version before you switch. Local builds show their saved version.
+
 The launcher verifies official downloads and backs up the mod files it manages when switching setups. Bring your own Call of Duty 2 installation.
 
 ## Publish a mod
 
-Open **Other Mods → Publish a mod**. Select your build files, export a ZIP and descriptor, and upload both to a release in your own GitHub repo. The editor can copy a packaging prompt for an AI agent. [Publishing guide](docs/publishing.md)
+Open **Other Mods → Publish a mod**. Select your build files, export a ZIP and descriptor, and upload both to a release in your own GitHub repo. Choose **Copy publishing prompt** to have your coding agent package the mod, publish it, and submit its first catalog request. [Publishing guide](docs/publishing.md)
 
 ## Build from source
 

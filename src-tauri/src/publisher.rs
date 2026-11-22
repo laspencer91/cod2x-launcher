@@ -249,6 +249,9 @@ pub fn github_url(
     name: &str,
     version: &str,
 ) -> Result<String> {
+    if kind == "device" {
+        return Ok("https://github.com/login/device".into());
+    }
     if kind == "new" {
         let mut url = reqwest::Url::parse("https://github.com/new")?;
         if packages::package_key(mod_id) {

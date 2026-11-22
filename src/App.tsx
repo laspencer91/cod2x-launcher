@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { RecentMod, latestMod, proposedMod, rememberMod, useRecentMod } from "./RecentMod";
 import { PublishView } from "./PublishView";
 import {
   ArrowDownToLine, ArrowRight, Box, Check, ChevronDown,
@@ -15,7 +16,7 @@ import {
 import type { Candidate, Dashboard, HostedRelease, Package, Release, Status } from "./api";
 
 type Page = "overview" | "official" | "mods" | "local" | "installation" | "publish";
-type Prompt = { type: "select"; candidate: Candidate } | { type: "apply"; release: Package };
+type Prompt = { type: "select"; candidate: Candidate } | { type: "apply"; release: Package; source: "catalog" | "local" };
 
 const navigation: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
@@ -94,6 +95,9 @@ export function App() {
   const [setupChoice, setSetupChoice] = useState("");
   const [releases, setReleases] = useState<Release[]>([previewRelease]);
   const [hosted, setHosted] = useState<HostedRelease[]>([]);
+  const [catalogReady, setCatalogReady] = useState(false);
+  const [catalogChecking, setCatalogChecking] = useState(false);
+  const catalogRequest = useRef(0);
   const [catalogError, setCatalogError] = useState("");
   const [modVersions, setModVersions] = useState<Record<string, string>>({});
   const [versions, setVersions] = useState({ official: STABLE, local: "" });
@@ -103,6 +107,7 @@ export function App() {
   const [prompt, setPrompt] = useState<Prompt | null>(null);
 
   const installation = data.installation;
+  const { recent, local: lastLocal } = useRecentMod(installation, hosted, data.packages);
   const verified = installation?.packageId && installation.version && !installation.recoveryPending;
   const selectedRelease = releases.find((release) => release.version === versions.official) ?? releases[0];
   const selectedOfficial = data.packages.find((item) => item.id === OFFICIAL && item.version === selectedRelease.version);
@@ -158,12 +163,34 @@ export function App() {
       }
       setReleaseMessage(available.length ? "GitHub Releases" : "Pinned release");
     }).catch(() => { if (current) setReleaseMessage("Pinned release"); });
-    api.hosted().then((available) => {
-      if (current) setHosted(available);
-    }).catch((error: unknown) => {
-      if (current) setCatalogError(String(error));
-    });
     return () => { current = false; };
+  }, [installationReady]);
+
+  async function refreshCatalog() {
+    const request = ++catalogRequest.current;
+    setCatalogChecking(true);
+    try {
+      const items = await api.hosted();
+      if (request === catalogRequest.current) { setHosted(items); setCatalogReady(true); setCatalogError(""); }
+      return items;
+    } catch (e) {
+      if (request === catalogRequest.current) { setCatalogReady(false); setCatalogError(String(e)); }
+      throw e;
+    } finally { if (request === catalogRequest.current) setCatalogChecking(false); }
+  }
+
+  useEffect(() => {
+    if (!installationReady) return;
+    let lastCheck = 0;
+    const check = () => {
+      if (document.hidden || Date.now() - lastCheck < 60_000) return;
+      lastCheck = Date.now();
+      void refreshCatalog().catch(() => {});
+    };
+    check();
+    window.addEventListener("focus", check);
+    const timer = window.setInterval(check, 300_000);
+    return () => { ++catalogRequest.current; window.removeEventListener("focus", check); clearInterval(timer); };
   }, [installationReady]);
 
   function go(next: Page) {
@@ -255,10 +282,27 @@ export function App() {
 
   function prepareMod(release: Package) {
     void run("Checking " + release.name, async () => {
-      const ready = await api.downloadMod(release.id, release.version);
-      addPackage(ready);
-      if (installation?.officialVersion !== ready.baseVersion) await download(ready.baseVersion);
-      startSetup(ready);
+      await loadMod(release);
+    });
+  }
+
+  async function loadMod(release: Package) {
+    const ready = await api.downloadMod(release.id, release.version);
+    addPackage(ready);
+    if (installation?.officialVersion !== ready.baseVersion) await download(ready.baseVersion);
+    startSetup(ready, "catalog");
+  }
+
+  function resumeRecent() {
+    if (!recent) return;
+    void run("Checking published releases", async () => {
+      const target = proposedMod(await refreshCatalog(), recent);
+      if (!target) throw new Error("No matching published release was found. Saved versions are available in the setup selector.");
+      if (installation?.packageId === target.id && installation.version === target.version) {
+        setFeedback({ kind: "info", text: target.name + " v" + target.version + " is already active." });
+        return;
+      }
+      await loadMod(target);
     });
   }
 
@@ -268,12 +312,12 @@ export function App() {
     return cached;
   }
 
-  function startSetup(release: Package) {
+  function startSetup(release: Package, source: "local" | "catalog" = "local") {
     if (!installation) {
       go("installation");
       return;
     }
-    setPrompt({ type: "apply", release });
+    setPrompt({ type: "apply", release, source });
   }
 
   function setupOfficial(version: string) {
@@ -332,6 +376,10 @@ export function App() {
     void run("Applying setup", async () => {
       const release = choice.release;
       const status = await api.apply(release.id, release.version);
+      if (status.packageId === release.id && status.version === release.version) {
+        setSetupChoice(setupKey(release.id, release.version));
+        if (release.id !== OFFICIAL) rememberMod(status.path, { id: release.id, version: release.version, name: release.name, source: choice.source });
+      }
       updateStatus(status);
       setFeedback({ kind: status.packageId === release.id && status.version === release.version ? "info" : "error",
         text: status.name + (status.version ? " " + status.version : "") + " \u00b7 file check complete." });
@@ -433,6 +481,8 @@ export function App() {
           <div className="launch-state">
             <StatusPill status={status} />
             {activeDescription && <span>{activeDescription}</span>}
+            {recent && status.packageId === recent.id && recent.source !== "local" && catalogReady &&
+              latestMod(hosted, recent.id)?.version === status.version && <span>Latest published version</span>}
             {latestVerified && status.kind !== "mixed" && (status.kind !== "official" || status.version !== latest.version) &&
               <button className="text-action" onClick={() => {
                 setVersions((previous) => ({ ...previous, official: latest.version }));
@@ -467,6 +517,9 @@ export function App() {
             <button className="button button-secondary hero-secondary" onClick={() => go("mods")} disabled={Boolean(busy)}><Layers3 size={16} /> Set up a different mod <ArrowRight size={15} /></button>
             {canRestore && !selectedIsRestore && <button className="text-action" disabled={Boolean(busy)} onClick={restoreOfficial}><RotateCcw size={13} /> Restore Official CoD2x</button>}
           </div>
+          {recent && !status.recoveryPending && <RecentMod recent={recent} local={lastLocal} releases={hosted}
+            active={status.packageId === recent.id && status.version === recent.version} available={catalogReady}
+            loading={catalogChecking} disabled={Boolean(busy)} onCatalog={resumeRecent} onLocal={startSetup} />}
         </div>
       </section>
       <section className="install-strip" aria-label="Game installation">
@@ -536,8 +589,8 @@ export function App() {
         </div>
         <ul aria-label="Available mods">
           {[...groups].map(([id, releases]) => {
-            const sorted = releases.sort((a, b) => b.manifest.version.localeCompare(a.manifest.version, "en", { numeric: true }));
-            const preferred = modVersions[id] ?? (installation?.packageId === id ? installation.version : undefined);
+            const sorted = releases.sort((a, b) => (b.download?.publishedAt ?? "").localeCompare(a.download?.publishedAt ?? "") || b.manifest.version.localeCompare(a.manifest.version, "en", { numeric: true }));
+            const preferred = modVersions[id];
             const selected = sorted.find(({ manifest }) => manifest.version === preferred) ?? sorted[0];
             const release = selected?.manifest;
             const name = release?.name ?? "125 Hz Playtest";
@@ -561,7 +614,7 @@ export function App() {
               <div className="mod-author">{release?.authors.length ? release.authors.join(", ") : "Unlisted"}</div>
               <div className="mod-version">
                 {release ? <Select id={"version-" + id} label={name + " version"} value={release.version} disabled={Boolean(busy)} onChange={(version) => setModVersions((previous) => ({ ...previous, [id]: version }))}>
-                  {sorted.map(({ manifest }) => <option value={manifest.version} key={manifest.version}>{manifest.version}</option>)}
+                  {sorted.map(({ manifest }) => <option value={manifest.version} key={manifest.version}>{manifest.version}{sorted[0]?.download && sorted[0].manifest === manifest ? " (latest)" : ""}</option>)}
                 </Select> : <span>Awaiting release</span>}
               </div>
               <div className="mod-action">
@@ -649,7 +702,7 @@ export function App() {
         </nav>
         <div className="sidebar-bottom">
           <button aria-label="Installation" className={"nav-item " + (page === "installation" ? "nav-current" : "")} aria-current={page === "installation" ? "page" : undefined} onClick={() => go("installation")}><FolderOpen size={18} /><span>Installation</span></button>
-          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.1.0</span></div>
+          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.2.0</span></div>
         </div>
       </aside>
       <main className="main-view" key={page}>
@@ -657,7 +710,7 @@ export function App() {
           {page === "overview" && overview()}
           {page === "official" && official()}
           {page === "mods" && mods()}
-          {page === "publish" && <PublishView baseVersion={latest.version} baseVersions={officialVersions} onBack={() => go("mods")} />}
+          {page === "publish" && <PublishView hosted={hosted} baseVersion={latest.version} baseVersions={officialVersions} onBack={() => go("mods")} />}
           {page === "local" && localBuilds()}
           {page === "installation" && installations()}
         </div>

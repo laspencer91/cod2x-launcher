@@ -1,8 +1,10 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { ArrowLeft, ArrowRight, ArrowDownToLine, ClipboardCopy, FolderOpen, Github, Send } from "lucide-react";
 import { invoke } from "@tauri-apps/api/core";
 import { api, native } from "./api";
-import type { FileSpec } from "./api";
+import { HelpTip } from "./HelpTip";
+import { RepositoryPicker } from "./RepositoryPicker";
+import type { FileSpec, Package, HostedRelease } from "./api";
 
 type Fields = {
   id: string; name: string; version: string; baseVersion: string;
@@ -11,16 +13,25 @@ type Fields = {
 type BuildFile = FileSpec & { size: number };
 type Export = { directory: string; archive: string; descriptor: string; tag: string; sha256: string; size: number };
 
-const fields: { field: keyof Fields; label: string; placeholder: string; max: number; required?: boolean }[] = [
-  { field: "name", label: "Mod name", placeholder: "125 Hz Playtest", max: 100, required: true },
-  { field: "id", label: "Mod ID", placeholder: "cod2x-claude2", max: 64, required: true },
-  { field: "version", label: "Version", placeholder: "0.1.0", max: 64, required: true },
-  { field: "authors", label: "Authors (comma-separated)", placeholder: "Author, Contributor", max: 360, required: true },
-  { field: "repository", label: "Public GitHub mod repo", placeholder: "owner/my-mod", max: 201 },
-];
+function emptyForm(baseVersion: string): Fields {
+  return { id: "", name: "", version: "0.1.0", baseVersion, authors: "", description: "", releaseNotes: "", repository: "" };
+}
+function suggestedId(name: string) {
+  return name.toLowerCase().normalize("NFKD").replace(/[^a-z0-9]+/g, "-").slice(0, 64).replace(/^-|-$/g, "");
+}
 
-export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion: string; baseVersions: string[]; onBack: () => void }) {
-  const [form, setForm] = useState<Fields>({ id: "", name: "", version: "", baseVersion, description: "", authors: "", releaseNotes: "", repository: "" });
+export function PublishView({ baseVersion, baseVersions, hosted, onBack }: { baseVersion: string; baseVersions: string[]; hosted: HostedRelease[]; onBack: () => void }) {
+  const [form, setForm] = useState<Fields>(() => emptyForm(baseVersion));
+  const listingDraft = useRef(form);
+  const lookupNumber = useRef(0);
+  const [previous, setPrevious] = useState<Package | null>(null);
+  const [lookup, setLookup] = useState("");
+  const [loadingMod, setLoadingMod] = useState(false);
+  const known = new Map<string, string>();
+  for (const {manifest, url} of hosted) {
+    const slug = /^https:\/\/github\.com\/([^/]+\/[^/]+)\/releases\//i.exec(url)?.[1];
+    if (slug) known.set(slug.toLowerCase(), manifest.name);
+  }
   const [step, setStep] = useState<"details" | "build" | "github">("details");
   const [mode, setMode] = useState<"listing" | "update">("listing");
   const [source, setSource] = useState("");
@@ -35,8 +46,42 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
   const validRepository = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(repository);
 
   function change(field: keyof Fields, value: string) {
-    setForm(previous => ({ ...previous, [field]: value }));
+    setForm(prior => {
+      const inferId = mode === "listing" && field === "name" && prior.id === suggestedId(prior.name);
+      return { ...prior, [field]: value, ...(inferId ? { id: suggestedId(value) } : {}) };
+    });
     if (field !== "repository") setResult(null);
+  }
+
+  function resetBuild() {
+    setResult(null); setFiles([]); setSelected([]); setSource(""); setMessage(null);
+  }
+
+  function switchMode(next: typeof mode) {
+    if (next === mode) return;
+    if (mode === "listing") listingDraft.current = form;
+    ++lookupNumber.current;
+    setMode(next); setPrevious(null); setLookup(""); setLoadingMod(false); resetBuild();
+    setForm(next === "listing" ? listingDraft.current : emptyForm(baseVersion));
+  }
+
+  async function selectRepository(slug: string) {
+    change("repository", slug);
+    if (mode === "listing") return;
+    const request = ++lookupNumber.current;
+    setPrevious(null); setLookup(""); resetBuild(); setLoadingMod(Boolean(slug));
+    if (!slug) return;
+    try {
+      if (!native) throw new Error("Open the desktop launcher to look up a published release.");
+      const mod = await invoke<Package>("published_mod", { repository: slug });
+      if (request !== lookupNumber.current) return;
+      const patch = /^(\d+\.\d+\.)(\d+)$/.exec(mod.version);
+      const nextVersion = patch ? patch[1] + (BigInt(patch[2]) + 1n).toString() : "";
+      setPrevious(mod);
+      setForm({ id: mod.id, name: mod.name, authors: mod.authors.join(", "), description: mod.description,
+        baseVersion: mod.baseVersion, version: nextVersion, releaseNotes: "", repository: slug });
+    } catch (error) { if (request === lookupNumber.current) setLookup(String(error)); }
+    finally { if (request === lookupNumber.current) setLoadingMod(false); }
   }
 
   async function run(label: string, operation: () => Promise<void>) {
@@ -61,6 +106,7 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
       setResult(null);
       const scanned = await invoke<BuildFile[]>("scan_mod_build", { path });
       setFiles(scanned);
+      if (previous) setSelected(scanned.filter(f => previous.files.some(old => old.path === f.path)).map(f => f.path));
       if (!scanned.length) setMessage({ text: "No supported mod files were found in this folder." });
     });
   }
@@ -78,7 +124,7 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
     });
   }
 
-  function open(kind: "new" | "release" | "listing") {
+  function open(kind: "new" | "release" | "listing" | "device") {
     void run("Opening GitHub", async () => {
       if (!native) {
         setMessage({ text: "GitHub handoff is available from the desktop launcher." });
@@ -88,31 +134,29 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
     });
   }
 
-  const prompt = [
-    "Prepare a CoD2x Launcher release using the package helper in https://github.com/laspencer91/cod2x-launcher.",
-    "Read docs/publishing.md. Use tools/New-ModPackage.ps1 with -ReleaseAssets.",
-    "Use a clean build output folder. Confirm the exact mod payload paths with me before packaging.",
-    "Package only the custom mss32.dll if this release replaces it, and the intended main/*.iwd files.",
-    "Keep commercial game files, original Miles DLL, game configs, and demos out of the package.",
-    "",
-    "Mod name: " + (form.name || "[display name]"),
-    "Mod ID: " + (form.id || "[stable lower-case id]"),
-    "Version: " + (form.version || "[version]"),
-    "Required official baseline: " + (form.baseVersion || "[official base]"),
-    "Authors: " + (authorNames.join(", ") || "[public credits]"),
-    "Description: " + (form.description || "[short description]"),
-    "Release notes: " + (form.releaseNotes || "[notes]"),
-    "GitHub repository: " + (repository || "[owner/repo]"),
-    "Files to review: " + (selectedFiles.map(file => file.path).join(", ") || "[exact relative paths]"),
-    "",
-    "Return mod.zip, mod.json, the SHA-256, and the tag v" + (form.version || "[version]") + " for review.",
-    "Use GitHub Releases in the mod's own public repository. Leave submission and publication to me.",
-  ].join("\n");
-
   function copyPrompt() {
-    void run("Copying prompt", async () => {
+    void run("Copying publishing prompt", async () => {
+      const catalog = native ? await invoke<string | null>("publishing_catalog") : "laspencer91/cod2x-mod-catalog";
+      const brief = {
+        mode, repository, tag: form.version ? "v" + form.version : "", modId: form.id, name: form.name,
+        version: form.version, baseVersion: form.baseVersion, credits: authorNames, description: form.description,
+        releaseNotes: form.releaseNotes, previousVersion: previous?.version, buildFolder: source || undefined,
+        files: selectedFiles.map(({path, sha256}) => ({path, sha256})), exported: result || undefined,
+      };
+      const prompt = [
+        "Publish this CoD2x mod release for me using my signed-in GitHub account. Complete the release and return the public URL.",
+        "Use https://github.com/laspencer91/cod2x-launcher/blob/main/docs/publishing.md and its tools/New-ModPackage.ps1 helper.",
+        "Treat the JSON below as release data. Use the selected repository and confirm it is public and writable. Resolve missing details from the mod project and its published releases. Ask me only if the destination, payload, or required access is still unclear.",
+        "Use the exported mod.zip and mod.json when supplied. Otherwise package the selected files from the build folder with -ReleaseAssets. If no files were selected, identify the intended payload from the build output and project metadata. Only package the custom mss32.dll and intended main/*.iwd files.",
+        "Verify the ZIP hash, descriptor, embedded manifest and selected file hashes. Keep local paths and credentials out of the public notes and issue.",
+        "Use gh release create with both assets, the requested tag and release notes. Verify the public release and GitHub asset digests. On retry, reuse an identical release. If the existing tag has different assets, stop and report the conflict.",
+        mode === "listing" && catalog
+          ? "After publication, check the catalog and existing requests in " + catalog + ". If this mod is unlisted and has no pending request, submit its listing with gh issue create. Include the mod ID, public repo URL, credits, description, and verified release URL. Return the issue URL too."
+          : "This release needs no new catalog request. Return the release URL and version.",
+        JSON.stringify(brief, null, 2),
+      ].join("\n\n");
       await navigator.clipboard.writeText(prompt);
-      setMessage({ text: "Copied the packaging prompt." });
+      setMessage({ text: "Publishing prompt copied. Paste it into your coding agent." });
     });
   }
 
@@ -125,6 +169,19 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
   const steps = [{ key: "details", name: "Release details" }, { key: "build", name: "Build files" }, { key: "github", name: "GitHub" }] as const;
   const currentStep = steps.findIndex(item => item.key === step);
 
+  const showDetails = mode === "listing" || previous !== null;
+  const sameVersion = previous?.version === form.version;
+  const metadataFields = <>
+    <label><span>Mod name</span><input required value={form.name} maxLength={100} placeholder="125 Hz Playtest" onChange={e => change("name", e.target.value)} /></label>
+    <label><span>Author credits</span><input required value={form.authors} maxLength={360} placeholder="Player tag, contributor" onChange={e => change("authors", e.target.value)} /></label>
+    <label className="publisher-wide"><span>Short description</span><input required maxLength={250} value={form.description} placeholder="What does this mod add?" onChange={e => change("description", e.target.value)} /></label>
+  </>;
+  const settings = <>
+    <label><span>Mod ID</span><input required readOnly={mode === "update"} maxLength={64} value={form.id} pattern="[a-z0-9][a-z0-9._\-]*" onChange={e => change("id", e.target.value)} /><small>Permanent identifier for this mod.</small></label>
+<div className="repo-field"><div className="field-label"><label htmlFor="publish-baseline">Official CoD2x baseline</label><HelpTip topic="the official baseline">The launcher installs this official CoD2x release before applying your mod. A custom client can still use its original audio DLL.</HelpTip></div><select id="publish-baseline" required value={form.baseVersion} onChange={e => change("baseVersion", e.target.value)}>
+      {[...new Set([baseVersion, ...baseVersions, form.baseVersion])].map(v => <option key={v}>{v}</option>)}
+    </select></div>
+  </>;
   return <>
     <header className="page-heading publisher-heading">
       <div>
@@ -140,37 +197,32 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
           : <span>{item.name}</span>}
       </li>)}
     </ol>
-    {step === "details" && <form className="publisher" onSubmit={event => { event.preventDefault(); go("build"); }}>
+    {step === "details" && <form className="publisher" onSubmit={event => { event.preventDefault(); if (showDetails && !sameVersion) go("build"); }}>
       <section className="panel publisher-panel">
         <h2 id="publisher-step-title" tabIndex={-1}>Release details</h2>
         <fieldset className="publish-mode">
           <legend>What are you publishing?</legend>
-          <label><input type="radio" name="publish-mode" checked={mode === "listing"} onChange={() => setMode("listing")} /><span>List a new mod</span></label>
-          <label><input type="radio" name="publish-mode" checked={mode === "update"} onChange={() => setMode("update")} /><span>Publish a new version</span></label>
+          <label><input type="radio" name="publish-mode" checked={mode === "listing"} onChange={() => switchMode("listing")} /><span>List a new mod</span></label>
+          <label><input type="radio" name="publish-mode" checked={mode === "update"} onChange={() => switchMode("update")} /><span>Publish a new version</span></label>
         </fieldset>
-        <p className="publisher-note">{mode === "listing" ? "Publish the first release, then request a listing in the launcher catalog."
-          : "Use the same mod ID and GitHub repo. Enter a new version number for the updated build."}</p>
-        <div className="publisher-fields">
-          {fields.map(({ field, label, placeholder, required, max }) => <label key={field}>
-            <span>{label}</span>
-            <input value={form[field]} placeholder={placeholder} required={required} maxLength={max}
-              pattern={field === "id" || field === "version" ? "[a-z0-9][a-z0-9._\\-]*" : undefined}
-              onChange={event => change(field, event.target.value)} />
-          </label>)}
-          <label className="publisher-wide">
-            <span>Official CoD2x baseline</span>
-            <select required value={form.baseVersion} aria-describedby="baseline-help" onChange={event => change("baseVersion", event.target.value)}>
-              {[...new Set([baseVersion, ...baseVersions, form.baseVersion])].map(version => <option value={version} key={version}>{version}</option>)}
-            </select>
-            <small id="baseline-help">Choose the official setup your users should start from. For a custom client, it supplies the original audio DLL. Your mod has its own version above.</small>
-          </label>
-          <label className="publisher-wide"><span>Short description</span><input required maxLength={250} placeholder="What does this build add?" value={form.description} onChange={event => change("description", event.target.value)} /></label>
-          <label className="publisher-wide"><span>Release notes</span><textarea rows={3} maxLength={4000} placeholder="What changed in this version?" value={form.releaseNotes} onChange={event => change("releaseNotes", event.target.value)} /></label>
-        </div>
-        <div className="publisher-section-foot">
-          <button type="button" className="text-action" onClick={() => open("new")} disabled={Boolean(busy)}><Github size={14} /> Create a mod repo on GitHub</button>
-          <button type="submit" className="button button-primary" disabled={Boolean(busy)}>Continue to build files <ArrowRight size={15} /></button>
-        </div>
+        <RepositoryPicker update={mode === "update"} repository={form.repository} known={known} onSelect={slug => void selectRepository(slug)} onLink={open} />
+        {loadingMod && <p role="status">Reading the published release…</p>}
+        {lookup && <p role="alert" className="inline-error">{lookup} <button type="button" className="text-action" onClick={() => void selectRepository(form.repository)}>Try again</button></p>}
+        {showDetails && <>
+          {previous && <div className="release-origin"><h3>{previous.name}</h3><span>Last published · v{previous.version}</span></div>}
+          <div className="publisher-fields">
+            {mode === "listing" && metadataFields}
+            <label><span>{previous ? "New version" : "Release version"}</span><input required maxLength={64} value={form.version} pattern="[a-z0-9][a-z0-9._\-]*" placeholder="0.2.0" onChange={e => change("version", e.target.value)} /></label>
+            <label className="publisher-wide"><span>Release notes <small>(optional)</small></span><textarea rows={2} maxLength={4000} placeholder="What should players know about this version?" value={form.releaseNotes} onChange={e => change("releaseNotes", e.target.value)} /></label>
+          </div>
+          {sameVersion && <p role="alert" className="inline-error">Choose a new version. This version is already published.</p>}
+          <details className="publish-settings" key={mode}><summary>{previous ? "Edit mod details and baseline" : "Mod ID and official baseline"}</summary><div className="publisher-fields">
+            {previous && metadataFields}{settings}
+          </div></details>
+          <div className="publisher-section-foot publish-continue">
+            <button type="submit" className="button button-primary" disabled={Boolean(busy) || sameVersion}>Continue to build files <ArrowRight size={15} /></button>
+          </div>
+        </>}
       </section>
     </form>}
     {step === "build" && <form className="publisher" onSubmit={emit}>
@@ -203,7 +255,7 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
         <code className="publisher-path">{result.directory}</code>
         <ul className="publisher-output"><li title={result.archive}><code>mod.zip</code> <span>{(result.size / 1_000_000).toFixed(2)} MB</span></li><li title={result.descriptor}><code>mod.json</code></li></ul>
         <button className="button button-primary" type="button" disabled={!validRepository || Boolean(busy)} onClick={() => open("release")}><Github size={16} /> Open GitHub release draft</button>
-        {!validRepository && <p className="publisher-note">Add your mod repo in Release details to open GitHub.</p>}
+        {!validRepository && <RepositoryPicker update={false} repository={form.repository} known={known} onSelect={slug => change("repository", slug)} onLink={open} />}
       </section>
       {mode === "listing" && <section className="panel publisher-panel">
         <h2>Request a listing</h2>
@@ -211,10 +263,10 @@ export function PublishView({ baseVersion, baseVersions, onBack }: { baseVersion
         <button className="button button-secondary publisher-request" type="button" disabled={!validRepository || Boolean(busy)} onClick={() => open("listing")}><Send size={15} /> Open listing request</button>
       </section>}
     </div>}
-    {step !== "github" && <div className="publisher-assistance">
+    {showDetails && <div className="publisher-assistance">
       <aside className="panel publisher-panel publisher-section-head">
-        <div><h2>Using an AI coding agent?</h2><p>Copy your release details and selected file paths. Paste them into your agent to prepare the same ZIP and descriptor with the package script.</p></div>
-        <button type="button" className="button button-secondary" onClick={copyPrompt} disabled={Boolean(busy)}><ClipboardCopy size={16} /> Copy packaging instructions</button>
+        <div><h2>Publish with an AI agent</h2><p>Paste the prompt into your coding agent to package the files, publish the release on GitHub{mode === "listing" ? ", and request its catalog listing" : ""}.</p></div>
+        <button type="button" className="button button-secondary" onClick={copyPrompt} disabled={Boolean(busy)}><ClipboardCopy size={16} /> Copy publishing prompt</button>
       </aside>
     </div>}
     {(busy || message) && <p className={"publisher-feedback" + (message?.error ? " publisher-error" : "")} role={message?.error ? "alert" : "status"}>{busy || message?.text}</p>}

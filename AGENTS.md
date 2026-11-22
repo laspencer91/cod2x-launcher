@@ -8,7 +8,7 @@ Use **tools/New-ModPackage.ps1 -ReleaseAssets** with an explicit build output fo
 
 The launcher’s **Publish a mod** flow calls `scan_mod_build` for candidate files and `export_mod_build` for the selected files. The PowerShell helper is the command-line entry point for agents. A clean release contains only the mod payload.
 
-For a new listing, use the mod catalog's GitHub issue form. Publish assets in the author's mod repository. Obtain the user's instruction before submitting an issue or publishing a release on their behalf.
+The launcher's **Copy publishing prompt** asks the agent to publish the named release and, for a new listing, submit the catalog request. Follow that request through verification and return the public URLs. Use the GitHub CLI workflow in the publishing guide. Check existing releases and issues before retrying.
 
 ## Verify changes
 

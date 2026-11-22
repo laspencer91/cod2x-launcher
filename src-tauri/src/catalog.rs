@@ -10,6 +10,8 @@ const PUBLIC_ASSET: &str = "mod.json";
 #[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HostedRelease {
+    #[serde(default)]
+    pub published_at: Option<String>,
     pub manifest: Manifest,
     pub url: String,
     pub sha256: String,
@@ -147,17 +149,44 @@ fn repo_releases(client: &Client, slug: &str, id: &str) -> Result<Vec<HostedRele
     )?;
     let mut releases = Vec::new();
     for row in rows.into_iter().filter(|row| !row.draft) {
-        if let Ok(Some(release)) = read_release(client, slug, id, row) {
+        if let Some(release) = read_release(client, slug, Some(id), row)? {
             releases.push(release);
         }
     }
     Ok(releases)
 }
 
+pub fn published_mod(slug: &str) -> Result<Manifest> {
+    if !repo_slug(slug) {
+        return Err("Enter a GitHub repository as owner/repository.".into());
+    }
+    let client = github::client()?;
+    for page in 1.. {
+        let rows: Vec<GitHubRelease> = github::document(
+            &client,
+            &format!("https://api.github.com/repos/{slug}/releases?per_page=30&page={page}"),
+            8 * 1024 * 1024,
+        )
+        .map_err(|_| {
+            "Couldn’t read the public releases. Check the repository link or try again later."
+        })?;
+        let last = rows.len() < 30;
+        for row in rows.into_iter().filter(|row| !row.draft) {
+            if let Some(release) = read_release(&client, slug, None, row)? {
+                return Ok(release.manifest);
+            }
+        }
+        if last {
+            break;
+        }
+    }
+    Err("This repository has no published launcher package. Use List a new mod for its first release.".into())
+}
+
 fn read_release(
     client: &Client,
     slug: &str,
-    id: &str,
+    id: Option<&str>,
     row: GitHubRelease,
 ) -> Result<Option<HostedRelease>> {
     let Some(version) = row
@@ -193,7 +222,8 @@ fn read_release(
     let Some(archive) = row.assets.iter().find(|asset| asset.name == "mod.zip") else {
         return Ok(None);
     };
-    if descriptor.manifest.id != id
+    if descriptor.manifest.id == OFFICIAL_ID
+        || id.is_some_and(|expected| descriptor.manifest.id != expected)
         || descriptor.manifest.version != version
         || descriptor.asset != archive.name
         || archive.browser_download_url != format!("{prefix}mod.zip")
@@ -206,6 +236,7 @@ fn read_release(
         return Ok(None);
     }
     Ok(Some(HostedRelease {
+        published_at: row.published_at,
         manifest: descriptor.manifest,
         url: archive.browser_download_url.clone(),
         sha256: descriptor.sha256,

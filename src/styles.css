@@ -358,6 +358,32 @@
   .publisher-output span { color: var(--muted); margin-left: 4px; }
   .publisher-note { margin-top: 7px; }
 
+  .repo-field { display: grid; min-width: 0; align-content: start; gap: 4px; }
+  .field-label, .help-tip { display: inline-flex; align-items: center; gap: 4px; }
+  .help-tip button { display: inline-grid; place-items: center; min-width: 24px; min-height: 24px; padding: 3px; background: transparent; color: #d2b895; border: 0; border-radius: 4px; cursor: help; }
+  .help-tip button:hover, .help-tip button:focus-visible { color: #ffce8f; background: #392c20; }
+  .help-bubble { position: fixed; z-index: 12; width: min(280px, calc(100vw - 16px)); padding: 10px 12px; border: 1px solid #7b5b37; border-radius: 5px; background: #30251b; box-shadow: 0 5px 18px #100c09aa; color: #ffebce; font: 400 12px/1.55 Inter, sans-serif; }
+  .repo-picker { margin: 16px 0; padding: 12px 14px; border: 1px solid var(--line); border-radius: 6px; background: #191612; }
+  .repo-head, .repo-head strong, .repo-connect, .repo-links, .repo-manual, .release-origin, .recent-mod { display: flex; align-items: center; gap: 9px; flex-wrap: wrap; }
+  .repo-head, .repo-connect { justify-content: space-between; }
+  .repo-head strong { font-size: 13px; color: var(--text); }
+  .repo-head svg, .recent-mod > svg { color: var(--gold); }
+  .repo-links { gap: 16px; margin-top: 9px; }
+  .repo-picker .text-action, .inline-error .text-action { margin: 0; }
+  .repo-manual, .repo-connect, .chosen-repo { margin-top: 9px; }
+  .repo-manual { align-items: flex-end; }
+  .repo-manual label { display: grid; gap: 4px; font-size: 12px; flex: 1; min-width: 180px; }
+  .publisher-panel .inline-error { color: #ffc4a5; margin: 8px 0; }
+  .publish-settings { margin-top: 12px; border-top: 1px solid var(--line-soft); padding-top: 10px; }
+  .publish-settings summary { cursor: pointer; color: #eac091; font-size: 12px; }
+  .publish-continue { justify-content: flex-end; }
+  .release-origin h3 { font-size: 16px; }
+  .release-origin span, .recent-info span, .recent-info small { color: #cebca4; font-size: 12px; }
+  .recent-mod { width: fit-content; max-width: 100%; margin-top: 13px; padding-top: 11px; border-top: 1px solid #59432e; gap: 12px; }
+  .recent-info { display: grid; gap: 2px; }
+  .recent-info strong { color: #fff1dd; font-size: 14px; overflow-wrap: anywhere; }
+  .recent-info small { margin-left: 3px; font-weight: 500; }
+
   @media (max-width: 1030px) {
     .workspace { grid-template-columns: 180px minmax(0, 1fr); }
     .page-content { padding-left: 23px; padding-right: 23px; }
