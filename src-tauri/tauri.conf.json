@@ -1,0 +1,32 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CoD2x Launcher",
+  "version": "0.1.0",
+  "identifier": "io.cod2xcommunity.launcher",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "label": "main",
+        "title": "CoD2x Launcher",
+        "width": 1330,
+        "height": 860,
+        "minWidth": 880,
+        "minHeight": 670,
+        "decorations": false,
+        "center": true
+      }
+    ],
+    "security": { "csp": "default-src 'self'; img-src 'self' asset:; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src ipc: http://ipc.localhost" }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis"],
+    "icon": ["icons/icon.ico"]
+  }
+}
