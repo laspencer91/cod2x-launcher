@@ -5,7 +5,7 @@ Each mod uses its own public GitHub repository. Once the catalog lists it, anyon
 ## Prepare a release
 
 1. In the launcher, open **Other Mods → Publish a mod**.
-2. Select a public GitHub repository or paste its link. The picker shows repositories where your GitHub account can publish. For a first release, enter the mod name, credits, and description. When the repository already has a launcher package, the form loads its details and suggests the next version.
+2. For an existing mod, choose its public repository or paste its link. The form loads its latest package details and suggests the next version. For a new mod, enter the name, credits, and description. You can leave the repository blank and use **Copy publishing prompt** to have your agent create it.
 3. Choose the build output folder. Select only the files you intend to ship. The scanner suggests a custom **mss32.dll** and mod **.iwd** files inside **main/**. Official archives and a recognized official DLL are excluded. Use the build output so other mods and downloaded maps are easy to avoid.
 4. **Copy publishing prompt** delegates packaging, publishing, verification, and a first catalog request to your coding agent. It works from the release details, build files, or exported package. For manual publishing, **Export release files** creates **mod.zip** and **mod.json** in a versioned output folder. The descriptor contains the package metadata, size, and SHA-256.
 5. **Open GitHub release draft** takes you to the mod repo’s Releases form. Use tag **v<version>** and attach **both** assets with their exact filenames. Publish the release through GitHub.
@@ -16,6 +16,17 @@ After the first listing, publish subsequent releases directly on GitHub. Use the
 ![Publishing an update from an existing mod repository](publisher.png)
 
 ## Repository layout
+
+A first release can start with a README as the only file on the default branch. When the prompt has an empty repository field, check the mod project and catalog for an existing home for the same mod ID. For a new project, create a dedicated public repository under the signed-in publisher’s account, using the mod ID as its name. Check the proposed name first and resolve any collision with an unrelated project.
+
+```powershell
+$owner = gh api user --jq .login
+$repo = "$owner/my-mod"  # Replace my-mod with the stable mod ID from the release brief.
+gh repo create $repo --public --add-readme
+gh repo view $repo --json nameWithOwner,visibility,viewerPermission,defaultBranchRef
+```
+
+Run the creation command once. On a retry, reuse the repository you created. Keep the game installation local. Upload the two package files as assets on the GitHub release.
 
 A repo just needs a default branch and published releases. The branch can contain your source, a README, or both. A public release uses **v<version>** as the tag and includes **mod.zip** and **mod.json** as assets. The launcher checks that the descriptor matches the approved mod ID, tag, archive size, and GitHub release digest.
 

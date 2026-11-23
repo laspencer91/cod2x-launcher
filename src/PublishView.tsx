@@ -136,10 +136,13 @@ export function PublishView({ baseVersion, baseVersions, repositories, onBack }:
       const prompt = [
         "Publish this CoD2x mod release for me using my signed-in GitHub account. Complete the release and return the public URL.",
         "Use https://github.com/laspencer91/cod2x-launcher/blob/main/docs/publishing.md and its tools/New-ModPackage.ps1 helper.",
-        "Treat the JSON below as release data. Use the selected repository and confirm it is public and writable. Resolve missing details from the mod project and its published releases. Ask me only if the destination, payload, or required access is still unclear.",
+        "Treat the JSON below as release data. Resolve missing details from the mod project and its published releases. Ask me only if its identity, intended files, or required access remain unclear.",
+        repository
+          ? "Use the selected repository for this release. Verify its public visibility and your release access with gh repo view."
+          : "Set up the release repository for me. Check the mod project and catalog for an existing public repository for this mod ID and reuse it when writable. For a new mod, use gh api user --jq .login to identify the owner and the stable mod ID as the repository name. If that name is available, run gh repo create OWNER/MOD-ID --public --add-readme with the resolved values. This initializes the default branch. If the name belongs to another project, ask for a different name. Keep the game installation and local source tree out of the public repository.",
         "Use the exported mod.zip and mod.json when supplied. Otherwise package the selected files from the build folder with -ReleaseAssets. If no files were selected, identify the intended payload from the build output and project metadata. Only package the custom mss32.dll and intended main/*.iwd files.",
         "Verify the ZIP hash, descriptor, embedded manifest and selected file hashes. Keep local paths and credentials out of the public notes and issue.",
-        "Use gh release create with both assets, the requested tag and release notes. Verify the public release and GitHub asset digests. On retry, reuse an identical release. If the existing tag has different assets, stop and report the conflict.",
+        "Publish a non-draft GitHub release with gh release create v<VERSION> mod.zip mod.json --repo OWNER/REPO using the resolved repository and manifest version. Attach both files as release assets and include the release notes. Verify the public release and GitHub asset digests. On retry, reuse an identical release. If the existing tag has different assets, stop and report the conflict.",
         !listed && catalog
           ? "After publication, check the catalog and existing requests in " + catalog + ". If this mod is unlisted and has no pending request, submit its listing with gh issue create. Include the mod ID, public repo URL, credits, description, and verified release URL. Return the issue URL too."
           : "This release needs no new catalog request. Return the release URL and version.",
@@ -174,7 +177,7 @@ export function PublishView({ baseVersion, baseVersions, repositories, onBack }:
   </>;
   const agentAction = <div className="publisher-agent">
     <button type="button" className="button button-secondary" onClick={copyPrompt} disabled={Boolean(busy)}><ClipboardCopy size={16} /> Copy publishing prompt</button>
-    <HelpTip topic="the publishing prompt">Paste this into your AI coding agent to package the files and publish the release. For a new mod, it also requests a catalog listing.</HelpTip>
+    <HelpTip topic="the publishing prompt">Your coding agent can create a public release repository, package and publish the mod, and request its first catalog listing. Leave the repository blank for a new project.</HelpTip>
   </div>;
   return <>
     <header className="page-heading publisher-heading">
