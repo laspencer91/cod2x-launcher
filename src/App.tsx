@@ -661,7 +661,7 @@ export function App() {
         </nav>
         <div className="sidebar-bottom">
           <button aria-label="Installation" className={"nav-item " + (page === "installation" ? "nav-current" : "")} aria-current={page === "installation" ? "page" : undefined} onClick={() => go("installation")}><FolderOpen size={18} /><span>Installation</span></button>
-          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.2.2</span></div>
+          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.2.3</span></div>
         </div>
       </aside>
       <main className="main-view" key={page}>

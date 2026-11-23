@@ -9,7 +9,9 @@ Each mod uses its own public GitHub repository. Once the catalog lists it, anyon
 3. Choose the build output folder. Select only the files you intend to ship. The scanner suggests a custom **mss32.dll** and mod **.iwd** files inside **main/**. Official archives and a recognized official DLL are excluded. Use the build output so other mods and downloaded maps are easy to avoid.
 4. **Copy publishing prompt** delegates packaging, publishing, verification, and a first catalog request to your coding agent. It works from the release details, build files, or exported package. For manual publishing, **Export release files** creates **mod.zip** and **mod.json** in a versioned output folder. The descriptor contains the package metadata, size, and SHA-256.
 5. **Open GitHub release draft** takes you to the mod repo’s Releases form. Use tag **v<version>** and attach **both** assets with their exact filenames. Publish the release through GitHub.
-6. For a new mod, click **Open listing request**. This opens the [catalog repository’s issue form](https://github.com/laspencer91/cod2x-mod-catalog/issues/new?template=publisher-request.yml). Your account is the issue author. Review and submit the request in GitHub.
+6. For a new mod, click **Submit for review** with your GitHub account connected, or choose **Use GitHub form**. The catalog checks your public release and posts a pull request link on your listing request. A maintainer reviews the entry. Their approval lets GitHub merge it automatically. [Catalog listing form](https://github.com/laspencer91/cod2x-mod-catalog/issues/new?template=publisher-request.yml)
+
+Already published a compatible release? Select its repository in the first step and click **Submit for review** there. The launcher can list the existing release.
 
 After the first listing, publish subsequent releases directly on GitHub. Use the same repository and mod ID, a fresh **v<version>** tag, and matching **mod.zip** and **mod.json** assets. The launcher checks the catalog on startup and every five minutes while visible. Players choose when to install an update.
 
@@ -63,4 +65,18 @@ gh release create v0.1.0 C:\Builds\Release\mod.zip C:\Builds\Release\mod.json --
 gh release view v0.1.0 --repo owner/my-mod --json url,isDraft,tagName,assets
 ```
 
-Check the two GitHub asset digests against the local hashes. Reuse an identical published tag on a retry. A conflicting tag requires a new version. For a first listing, check the catalog and existing requests. Then run `gh issue create --repo laspencer91/cod2x-mod-catalog --title "List My Mod" --body-file listing.md` with the mod ID, repository URL, public credits, description, and release URL. An update to an existing listing needs only the new release. Return the public URLs to the publisher.
+Check the two GitHub asset digests against the local hashes. Reuse an identical published tag on a retry. A conflicting tag requires a new version. An update to an existing listing needs only the new release.
+
+For a first listing, check the catalog and open requests for the same mod. Create a temporary `listing.md` with the following headings and replace the sample values.
+
+```markdown
+### Mod ID
+
+my-mod
+
+### Public mod repository
+
+https://github.com/owner/my-mod
+```
+
+Run `gh issue create --repo laspencer91/cod2x-mod-catalog --title "List my-mod" --body-file listing.md`. The catalog workflow reads the fields, checks the release, and prepares a pull request that adds the entry to `catalog.json`. Read the issue comments for the review link or validation feedback. Return the release and review URLs to the publisher. The catalog maintainer supplies the approval.

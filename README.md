@@ -16,7 +16,7 @@ The launcher verifies official downloads and backs up the mod files it manages w
 
 ## Publish a mod
 
-Open **Other Mods → Publish a mod**. Select your build files, export a ZIP and descriptor, and upload both to a release in your own GitHub repo. Choose **Copy publishing prompt** to have your coding agent package the mod, publish it, and submit its first catalog request. [Publishing guide](docs/publishing.md)
+Open **Other Mods → Publish a mod**. Select your build files, export a ZIP and descriptor, and upload both to a release in your own GitHub repo. Click **Submit for review** to have GitHub prepare your catalog pull request. Once a maintainer approves it, players see your mod and its future releases. **Copy publishing prompt** gives your coding agent the instructions to publish and submit it for you. [Publishing guide](docs/publishing.md)
 
 ## Build from source
 

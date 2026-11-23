@@ -34,12 +34,14 @@ export function PublishView({ baseVersion, baseVersions, repositories, onBack }:
   const [selected, setSelected] = useState<string[]>([]);
   const [result, setResult] = useState<Export | null>(null);
   const [busy, setBusy] = useState("");
+  const [submitted, setSubmitted] = useState<{ id: string; repository: string; number: number } | null>(null);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const authorNames = form.authors.split(",").map(name => name.trim()).filter(Boolean);
   const selectedFiles = files.filter(file => selected.includes(file.path));
   const repository = form.repository.trim().replace(/^https:\/\/github\.com\//i, "").replace(/\/$/, "");
   const validRepository = /^[a-zA-Z0-9._-]+\/[a-zA-Z0-9._-]+$/.test(repository);
   const listed = known.has(repository.toLowerCase());
+  const requestNumber = submitted?.id === form.id && submitted?.repository === repository ? submitted.number : null;
 
   function change(field: keyof Fields, value: string) {
     setForm(prior => {
@@ -141,10 +143,10 @@ export function PublishView({ baseVersion, baseVersions, repositories, onBack }:
           ? "Use the selected repository for this release. Verify its public visibility and your release access with gh repo view."
           : "Set up the release repository for me. Check the mod project and catalog for an existing public repository for this mod ID and reuse it when writable. For a new mod, use gh api user --jq .login to identify the owner and the stable mod ID as the repository name. If that name is available, run gh repo create OWNER/MOD-ID --public --add-readme with the resolved values. This initializes the default branch. If the name belongs to another project, ask for a different name. Keep the game installation and local source tree out of the public repository.",
         "Use the exported mod.zip and mod.json when supplied. Otherwise package the selected files from the build folder with -ReleaseAssets. If no files were selected, identify the intended payload from the build output and project metadata. Only package the custom mss32.dll and intended main/*.iwd files.",
-        "Verify the ZIP hash, descriptor, embedded manifest and selected file hashes. Keep local paths and credentials out of the public notes and issue.",
+        "Verify the ZIP hash, descriptor, embedded manifest and selected file hashes. Use public project details in the release and listing.",
         "Publish a non-draft GitHub release with gh release create v<VERSION> mod.zip mod.json --repo OWNER/REPO using the resolved repository and manifest version. Attach both files as release assets and include the release notes. Verify the public release and GitHub asset digests. On retry, reuse an identical release. If the existing tag has different assets, stop and report the conflict.",
         !listed && catalog
-          ? "After publication, check the catalog and existing requests in " + catalog + ". If this mod is unlisted and has no pending request, submit its listing with gh issue create. Include the mod ID, public repo URL, credits, description, and verified release URL. Return the issue URL too."
+          ? "After publication, check catalog.json and open listing requests in " + catalog + ". For a first listing, submit the issue using gh issue create --body-file and the exact Markdown field headings in the publishing guide. The catalog opens a pull request automatically. Follow the request until the review link appears or report a validation error. Return the release and review URLs."
           : "This release needs no new catalog request. Return the release URL and version.",
         JSON.stringify(brief, null, 2),
       ].join("\n\n");
@@ -179,6 +181,16 @@ export function PublishView({ baseVersion, baseVersions, repositories, onBack }:
     <button type="button" className="button button-secondary" onClick={copyPrompt} disabled={Boolean(busy)}><ClipboardCopy size={16} /> Copy publishing prompt</button>
     <HelpTip topic="the publishing prompt">Your coding agent can create a public release repository, package and publish the mod, and request its first catalog listing. Leave the repository blank for a new project.</HelpTip>
   </div>;
+  const listingPanel = <section className="panel publisher-panel">
+        <h2>{requestNumber ? "Listing submitted" : "List in Other Mods"}</h2>
+        <p>{requestNumber ? "Your request tracks the catalog check and links to the pull request for review." : "Once your release is public, submit it for review. GitHub prepares the catalog change. Approval adds your mod for all players."}</p>
+        {requestNumber
+          ? <button className="button button-secondary" type="button" onClick={() => void run("Opening request", () => invoke("open_listing_request", { number: requestNumber }))}>View listing request ↗</button>
+          : <><button className="button button-primary" type="button" disabled={!validRepository || Boolean(busy)} onClick={() => void run("Submitting listing", async () => {
+            const number = await invoke<number>("request_listing", { repository, modId: form.id });
+            setSubmitted({ id: form.id, repository, number });
+          })}><Send size={15} /> Submit for review</button> <button className="text-action" type="button" disabled={!validRepository || Boolean(busy)} onClick={() => open("listing")}>Use GitHub form ↗</button></>}
+      </section>;
   return <>
     <header className="page-heading publisher-heading">
       <div>
@@ -200,6 +212,7 @@ export function PublishView({ baseVersion, baseVersions, repositories, onBack }:
             <h2>GitHub repository</h2>
             <RepositoryPicker repository={form.repository} known={known} onSelect={slug => void selectRepository(slug)} onLink={open} />
             <p className="catalog-hint">Once your mod is listed, publish future releases directly on GitHub. The launcher picks them up automatically.</p>
+            {previous && !listed && listingPanel}
             {loadingMod && <p role="status">Reading the published release…</p>}
             {lookup && <p role="alert" className="inline-error">{lookup} <button type="button" className="text-action" onClick={() => void selectRepository(form.repository)}>Try again</button></p>}
           </div>
@@ -255,11 +268,7 @@ export function PublishView({ baseVersion, baseVersions, repositories, onBack }:
         <button className="button button-primary" type="button" disabled={!validRepository || Boolean(busy)} onClick={() => open("release")}><Github size={16} /> Open GitHub release draft</button>
         {!validRepository && <button type="button" className="text-action" onClick={() => go("details")}>Choose a release repository</button>}
       </section>
-      {!listed && <section className="panel publisher-panel">
-        <h2>Request a listing</h2>
-        <p>Once the release is public, open the listing form in the catalog repo. Submit it on GitHub. Future releases come from the same approved repo.</p>
-        <button className="button button-secondary publisher-request" type="button" disabled={!validRepository || Boolean(busy)} onClick={() => open("listing")}><Send size={15} /> Open listing request</button>
-      </section>}
+      {!listed && listingPanel}
     </div>}
     {step !== "details" && agentAction}
     {(busy || message) && <p className={"publisher-feedback" + (message?.error ? " publisher-error" : "")} role={message?.error ? "alert" : "status"}>{busy || message?.text}</p>}

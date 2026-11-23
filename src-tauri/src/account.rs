@@ -192,3 +192,73 @@ pub fn connect(data: &Path, progress: Channel<String>) -> Result<()> {
     }
     Ok(())
 }
+
+pub fn request_listing(data: &Path, repository: &str, mod_id: &str) -> Result<u64> {
+    use crate::catalog;
+    if !catalog::repo_slug(repository)
+        || !packages::package_key(mod_id)
+        || mod_id == packages::OFFICIAL_ID
+    {
+        return Err("Choose a public mod repository and enter its stable mod ID.".into());
+    }
+    let registry = catalog::configured_repo()?.ok_or("No mod catalog is configured.")?;
+    let cli = executable(data)?.ok_or("Connect GitHub or use the listing form.")?;
+    let title = format!("List {mod_id}");
+    let fields = format!(
+        "### Mod ID\n\n{mod_id}\n\n### Public mod repository\n\nhttps://github.com/{repository}"
+    );
+    #[derive(Deserialize)]
+    struct Listing {
+        body: String,
+        number: u64,
+    }
+    let existing = command(&cli)
+        .args([
+            "issue",
+            "list",
+            "--repo",
+            registry,
+            "--state",
+            "open",
+            "--author",
+            "@me",
+            "--search",
+            &format!("{mod_id} in:title"),
+            "--json",
+            "number,body",
+        ])
+        .output()?;
+    if !existing.status.success() {
+        return Err(
+            "Couldn’t check your open requests. Connect GitHub or use the listing form.".into(),
+        );
+    }
+    for listing in serde_json::from_slice::<Vec<Listing>>(&existing.stdout)? {
+        if listing
+            .body
+            .replace("\r\n", "\n")
+            .lines()
+            .take(fields.lines().count())
+            .eq(fields.lines())
+        {
+            return Ok(listing.number);
+        }
+    }
+    let created = command(&cli)
+        .args([
+            "api",
+            &format!("repos/{registry}/issues"),
+            "-f",
+            &format!("title={title}"),
+            "-f",
+            &format!("body={fields}"),
+            "--jq",
+            ".number",
+        ])
+        .output()?;
+    if !created.status.success() {
+        return Err("GitHub could not submit this request. Try the listing form.".into());
+    }
+    let number: u64 = std::str::from_utf8(&created.stdout)?.trim().parse()?;
+    Ok(number)
+}

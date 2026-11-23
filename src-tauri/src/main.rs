@@ -116,6 +116,23 @@ async fn connect_publisher(app: AppHandle, progress: tauri::ipc::Channel<String>
 }
 
 #[tauri::command]
+async fn request_listing(app: AppHandle, repository: String, mod_id: String) -> Reply<u64> {
+    let data = data(&app)?;
+    background(move || account::request_listing(&data, &repository, &mod_id)).await
+}
+
+#[tauri::command]
+fn open_listing_request(app: AppHandle, number: u64) -> Reply<()> {
+    let registry = publishing_catalog()?.ok_or("No mod catalog is configured.")?;
+    app.opener()
+        .open_url(
+            format!("https://github.com/{registry}/issues/{number}"),
+            None::<&str>,
+        )
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 async fn published_mod(repository: String) -> Reply<Option<packages::Manifest>> {
     background(move || catalog::published_mod(&repository)).await
 }
@@ -209,6 +226,8 @@ fn main() {
             publishing_catalog,
             publisher_account,
             connect_publisher,
+            request_listing,
+            open_listing_request,
             published_mod,
             open_publishing_link,
             import_package,
