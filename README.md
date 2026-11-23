@@ -8,7 +8,7 @@ A community Windows launcher for switching between official CoD2x and test build
 
 1. [Download the Windows installer](https://github.com/laspencer91/cod2x-launcher/releases).
 2. Open the launcher and confirm your Call of Duty 2 folder.
-3. Play an official release, browse **Other Mods**, or import a package in **Local Builds**.
+3. Choose and play an official version from the Overview card. **Official releases** opens the upstream changelog on GitHub. Browse **Other Mods** for community releases or import a package in **Local Builds**.
 
 The Overview remembers the last mod used in each game folder. It checks for published updates and shows the version before you switch. Local builds show their saved version.
 

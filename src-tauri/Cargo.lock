@@ -524,7 +524,7 @@ dependencies = [
 
 [[package]]
 name = "cod2x-launcher"
-version = "0.2.1"
+version = "0.2.2"
 dependencies = [
  "fs2",
  "reqwest 0.12.28",

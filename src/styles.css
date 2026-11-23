@@ -252,7 +252,6 @@
   .mod-releases-link:hover { color: #ffdaac; }
   .catalog-error { margin-bottom: 14px; font-size: 12px; color: #e6b480; }
   .package-description { padding: 0 24px 18px; color: var(--muted); font-size: 13px; }
-  .middot { margin: 0 3px; color: #9c7a59; }
   .selection-row {
     display: flex; align-items: center; gap: 12px; padding: 14px 24px; flex-wrap: wrap;
     border-block: 1px solid var(--line-soft); background: #201b17;
@@ -261,9 +260,7 @@
   .select-wrap { display: flex; position: relative; align-items: center; max-width: 100%; }
   .select-wrap select { appearance: none; color: var(--text); border: 1px solid #504031; border-radius: 5px; padding: 8px 36px 8px 11px; background: #1e1a16; min-width: 155px; max-width: min(100%, 310px); font-size: 12px; }
   .select-wrap svg { position: absolute; right: 10px; pointer-events: none; color: #c5a277; }
-  .source-label { display: inline-flex; align-items: center; gap: 7px; font-size: 11px; color: var(--subtle); margin-left: auto; }
-  .release-notes { padding: 21px 24px 27px; }
-  .release-notes h3, .mod-body h3, .tracked-files h3 { color: #eadfcf; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
+  .mod-body h3, .tracked-files h3 { color: #eadfcf; font-size: 13px; font-weight: 700; margin-bottom: 8px; }
   .release-text { color: var(--muted); font-size: 13px; line-height: 1.65; white-space: pre-line; overflow-wrap: anywhere; }
   .panel-footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 24px; border-top: 1px solid var(--line-soft); background: #191714; }
   .panel-footer p { color: var(--subtle); font-size: 11px; }

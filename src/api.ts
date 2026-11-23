@@ -129,7 +129,7 @@ export const api = {
   discover: () => native ? invoke<Candidate[]>("discover_installs") : Promise.resolve([previewCandidate]),
   releases: () => native ? invoke<Release[]>("official_releases") : Promise.resolve([previewRelease]),
   hosted: (): Promise<ModCatalog> => native ? invoke("hosted_releases") : Promise.resolve({ repositories: {}, releases: [], shared: false, warning: null }),
-  openModReleases: (repository: string, modId: string) => invoke<void>("open_publishing_link", { kind: "releases", repository, modId, name: "", version: "" }),
+  openReleases: (repository: string, modId: string) => invoke<void>("open_publishing_link", { kind: "releases", repository, modId, name: "", version: "" }),
   downloadMod: (id: string, version: string) => invoke<Package>("download_mod", { id, version }),
   confirm: (path: string) => native
     ? invoke<Status>("confirm_install", { path })

@@ -5,22 +5,21 @@ import { PublishView } from "./PublishView";
 import {
   ArrowDownToLine, ArrowRight, Box, Check, ChevronDown, ExternalLink,
   ChevronRight, CircleAlert, CircleCheck, ClipboardCheck, Folder, FolderOpen,
-  Gamepad2, Github, HardDrive, Layers3, LayoutGrid, Minus, PackagePlus,
+  Gamepad2, HardDrive, Layers3, LayoutGrid, Minus, PackagePlus,
   Play, RefreshCw, RotateCcw, ShieldCheck, Square, X,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  api, initialDashboard, native, OFFICIAL, PLAYTEST, previewRelease, STABLE,
+  api, initialDashboard, native, OFFICIAL, PLAYTEST, previewRelease,
 } from "./api";
 import type { Candidate, Dashboard, HostedRelease, ModCatalog, Package, Release, Status } from "./api";
 
-type Page = "overview" | "official" | "mods" | "local" | "installation" | "publish";
+type Page = "overview" | "mods" | "local" | "installation" | "publish";
 type Prompt = { type: "select"; candidate: Candidate } | { type: "apply"; release: Package; source: "catalog" | "local" };
 
 const navigation: { id: Page; label: string; icon: LucideIcon }[] = [
   { id: "overview", label: "Overview", icon: LayoutGrid },
-  { id: "official", label: "Official CoD2x", icon: ShieldCheck },
   { id: "mods", label: "Other Mods", icon: Layers3 },
   { id: "local", label: "Local Builds", icon: Box },
 ];
@@ -71,20 +70,12 @@ function AppWindowControls() {
   </div>;
 }
 
-const releaseDate = (value: string) => value
-  ? new Intl.DateTimeFormat("en", { month: "short", day: "numeric", year: "numeric", timeZone: "UTC" }).format(new Date(value))
-  : "Date unavailable";
-
 function sameManifest(a: Package, b: Package) {
   return a.id === b.id && a.version === b.version && a.kind === b.kind && a.baseVersion === b.baseVersion
     && a.name === b.name && a.description === b.description && a.releaseNotes === b.releaseNotes
     && a.authors.length === b.authors.length && a.authors.every((author, index) => author === b.authors[index])
     && a.files.length === b.files.length
     && a.files.every((file, index) => file.path === b.files[index].path && file.sha256 === b.files[index].sha256);
-}
-
-function releaseSummary(text: string) {
-  return text.split(/\r?\n/).map((line) => line.trim()).filter(Boolean).slice(0, 8);
 }
 
 export function App() {
@@ -101,8 +92,8 @@ export function App() {
   const catalogRequest = useRef(0);
   const [catalogError, setCatalogError] = useState("");
   const [modVersions, setModVersions] = useState<Record<string, string>>({});
-  const [versions, setVersions] = useState({ official: STABLE, local: "" });
-  const [releaseMessage, setReleaseMessage] = useState(native ? "Checking GitHub" : "GitHub Releases");
+  const [localVersion, setLocalVersion] = useState("");
+  const [latestVerified, setLatestVerified] = useState(!native);
   const [busy, setBusy] = useState("");
   const [feedback, setFeedback] = useState<{ kind: "error" | "info"; text: string } | null>(null);
   const [prompt, setPrompt] = useState<Prompt | null>(null);
@@ -110,14 +101,11 @@ export function App() {
   const installation = data.installation;
   const { recent, local: lastLocal } = useRecentMod(installation, hosted, data.packages);
   const verified = installation?.packageId && installation.version && !installation.recoveryPending;
-  const selectedRelease = releases.find((release) => release.version === versions.official) ?? releases[0];
-  const selectedOfficial = data.packages.find((item) => item.id === OFFICIAL && item.version === selectedRelease.version);
   const cachedMods = data.packages.filter((item) => item.id !== OFFICIAL);
   const local = cachedMods.filter((item) => !hosted.some(({ manifest }) => sameManifest(item, manifest)));
-  const selectedLocal = local.find((item) => item.id + "/" + item.version === versions.local) ?? local[0];
+  const selectedLocal = local.find((item) => item.id + "/" + item.version === localVersion) ?? local[0];
   const installationReady = installation !== null;
   const latest = releases[0];
-  const latestVerified = releaseMessage === "GitHub Releases";
   const restoreVersion = latestVerified ? latest.version : installation?.officialVersion ?? latest.version;
   const setupKey = (id: string, version: string) => id + "/" + version;
   const officialVersions = [...new Set([
@@ -158,12 +146,9 @@ export function App() {
     let current = true;
     api.releases().then((available) => {
       if (!current) return;
-      if (available.length) {
-        setReleases(available);
-        setVersions((previous) => ({ ...previous, official: available[0].version }));
-      }
-      setReleaseMessage(available.length ? "GitHub Releases" : "Pinned release");
-    }).catch(() => { if (current) setReleaseMessage("Pinned release"); });
+      if (available.length) setReleases(available);
+      setLatestVerified(available.length > 0);
+    }).catch(() => { if (current) setLatestVerified(false); });
     return () => { current = false; };
   }, [installationReady]);
 
@@ -360,7 +345,7 @@ export function App() {
       if (typeof path !== "string") return;
       const release = await api.importZip(path);
       addPackage(release);
-      setVersions((previous) => ({ ...previous, local: release.id + "/" + release.version }));
+      setLocalVersion(release.id + "/" + release.version);
       setPage("local");
       setFeedback({ kind: "info", text: release.name + " " + release.version + " was imported." });
     });
@@ -450,6 +435,15 @@ export function App() {
     </main>;
   }
 
+  function releaseLink(repository: string, label: string, text: string, className: string, modId = "") {
+    const url = `https://github.com/${repository}/releases` + (modId ? "?q=" + encodeURIComponent(modId + "-v") : "");
+    return <a className={className} href={url} target="_blank" rel="noreferrer" aria-label={label} onClick={event => {
+      if (!native) return;
+      event.preventDefault();
+      void run("Opening GitHub releases", () => api.openReleases(repository, modId));
+    }}>{text} <ExternalLink size={12} aria-hidden="true" /></a>;
+  }
+
   function overview() {
     if (!installation) return null;
     const status = installation;
@@ -484,11 +478,9 @@ export function App() {
             {activeDescription && <span>{activeDescription}</span>}
             {recent && status.packageId === recent.id && recent.source !== "local" && catalogReady &&
               latestMod(hosted, recent.id)?.version === status.version && <span>Latest published version</span>}
-            {latestVerified && status.kind !== "mixed" && (status.kind !== "official" || status.version !== latest.version) &&
-              <button className="text-action" onClick={() => {
-                setVersions((previous) => ({ ...previous, official: latest.version }));
-                go("official");
-              }}>Latest official {latest.version} <ArrowRight size={13} /></button>}
+            {latestVerified && (status.kind !== "official" || status.version !== latest.version) &&
+              <span>Latest official {latest.version}</span>}
+            {releaseLink("callofduty2x/CoD2x", "Official CoD2x releases on GitHub", "Official releases", "text-action")}
           </div>
           <label className="setup-label" htmlFor="overview-setup">Setup to launch</label>
           <div className="actions setup-actions">
@@ -531,43 +523,6 @@ export function App() {
     </>;
   }
 
-  function official() {
-    const active = installation?.packageId === OFFICIAL && installation.version === selectedRelease.version;
-    return <>
-      <PageTitle title="Official CoD2x" description="Windows client releases from the upstream project." />
-      <section className="panel">
-        <div className="panel-heading package-heading">
-          <div className="tile-icon"><ShieldCheck size={23} /></div>
-          <div><h2>{selectedRelease.title}</h2><p>Yctn and eyza <span className="middot">&middot;</span> {releaseDate(selectedRelease.publishedAt)}</p></div>
-          {active && <span className="status-pill status-good"><span className="status-dot" /> Active</span>}
-        </div>
-        <div className="selection-row">
-          <label htmlFor="official-version">Release version</label>
-          <Select id="official-version" value={selectedRelease.version} onChange={(version) => setVersions({ ...versions, official: version })}>
-            {releases.map((item, index) => <option value={item.version} key={item.version}>{item.version}{index === 0 && latestVerified ? " (latest stable)" : ""}</option>)}
-          </Select>
-          <span className="source-label"><Github size={15} /> {releaseMessage}</span>
-        </div>
-        <div className="release-notes">
-          <h3>Release notes</h3>
-          <div className="release-text">{releaseSummary(selectedRelease.notes).join("\n") || "No release notes were supplied."}</div>
-        </div>
-        <div className="panel-footer">
-          <p>{(selectedRelease.downloadSize / 1000000).toFixed(1)} MB <span className="middot">&middot;</span> Windows ZIP <span className="middot">&middot;</span> SHA-256</p>
-          <div className="actions">
-            {!selectedOfficial && !active && <button className="button button-secondary" disabled={Boolean(busy)} onClick={() => void run("Downloading release", async () => {
-              await download(selectedRelease.version);
-              setFeedback({ kind: "info", text: "CoD2x " + selectedRelease.version + " was downloaded and verified." });
-            })}><ArrowDownToLine size={16} /> Download</button>}
-            {active ? launchButton()
-              : selectedOfficial ? setupButton(selectedOfficial)
-              : <button className="button button-primary" disabled={Boolean(busy) || installation?.recoveryPending} onClick={() => setupOfficial(selectedRelease.version)}><ShieldCheck size={16} /> {installation ? "Set up official release" : "Choose installation"}</button>}
-          </div>
-        </div>
-      </section>
-    </>;
-  }
-
   function mods() {
     const groups = new Map<string, { manifest: Package; download?: HostedRelease }[]>([[PLAYTEST, []]]);
     for (const id of Object.keys(catalog.repositories)) groups.set(id, []);
@@ -597,7 +552,6 @@ export function App() {
             const release = selected?.manifest;
             const repository = catalog.repositories[id];
             const name = release?.name ?? (id === PLAYTEST ? "125 Hz Playtest" : id);
-            const releasesUrl = repository && `https://github.com/${repository}/releases${catalog.shared ? "?q=" + encodeURIComponent(id + "-v") : ""}`;
             const cached = release && cachedMods.some((item) => sameManifest(item, release));
             const current = Boolean(release && cached && installation?.packageId === id && installation.version === release.version
               && release.files.every((file) => installation.files.some((actual) => actual.path === file.path && actual.sha256 === file.sha256)));
@@ -608,12 +562,7 @@ export function App() {
                 <div>
                   <h2>{name}</h2>
                   <p>{release?.description || (id === PLAYTEST ? "Claude2 client and zPAM for the 125 Hz playtest." : repository)}</p>
-                  {releasesUrl && <a className="mod-releases-link" href={releasesUrl} target="_blank" rel="noreferrer"
-                    aria-label={name + " releases on GitHub"} onClick={event => {
-                      if (!native) return;
-                      event.preventDefault();
-                      void run("Opening mod releases", () => api.openModReleases(repository, catalog.shared ? id : ""));
-                    }}>Releases <ExternalLink size={12} aria-hidden="true" /></a>}
+                  {repository && releaseLink(repository, name + " releases on GitHub", "Releases", "mod-releases-link", catalog.shared ? id : "")}
                   {release && <details className="mod-release-details">
                     <summary>Release details</summary>
                     <p>Requires CoD2x {release.baseVersion}{selected.download ? " \u00b7 " + (selected.download.size / 1_000_000).toFixed(1) + " MB" : ""}</p>
@@ -649,7 +598,7 @@ export function App() {
       {selectedLocal ? <section className="panel">
         <div className="panel-heading package-heading"><div className="tile-icon"><Box size={23} /></div><div><h2>{selectedLocal.name}</h2><p>{selectedLocal.authors.join(" / ") || "Local build"}</p></div></div>
         <p className="package-description">{selectedLocal.description}</p>
-        <div className="selection-row"><label htmlFor="local-version">Imported release</label><Select id="local-version" value={selectedLocal.id + "/" + selectedLocal.version} onChange={(version) => setVersions({ ...versions, local: version })}>{local.map((release) => <option key={release.id + "/" + release.version} value={release.id + "/" + release.version}>{release.name} {release.version}</option>)}</Select></div>
+        <div className="selection-row"><label htmlFor="local-version">Imported release</label><Select id="local-version" value={selectedLocal.id + "/" + selectedLocal.version} onChange={setLocalVersion}>{local.map((release) => <option key={release.id + "/" + release.version} value={release.id + "/" + release.version}>{release.name} {release.version}</option>)}</Select></div>
         {renderPackage(selectedLocal)}
       </section> : <EmptyState icon={Box} title="No local builds yet">
         <p>Import a ZIP containing its manifest and package files.</p>
@@ -712,13 +661,12 @@ export function App() {
         </nav>
         <div className="sidebar-bottom">
           <button aria-label="Installation" className={"nav-item " + (page === "installation" ? "nav-current" : "")} aria-current={page === "installation" ? "page" : undefined} onClick={() => go("installation")}><FolderOpen size={18} /><span>Installation</span></button>
-          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.2.1</span></div>
+          <div className="sidebar-meta"><span className="status-dot" /> Windows <span>v0.2.2</span></div>
         </div>
       </aside>
       <main className="main-view" key={page}>
         <div className="page-content">
           {page === "overview" && overview()}
-          {page === "official" && official()}
           {page === "mods" && mods()}
           {page === "publish" && <PublishView repositories={catalog.shared ? {} : catalog.repositories} baseVersion={latest.version} baseVersions={officialVersions} onBack={() => go("mods")} />}
           {page === "local" && localBuilds()}
